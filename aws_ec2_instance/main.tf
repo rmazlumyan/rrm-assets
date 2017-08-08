@@ -1,24 +1,17 @@
 provider "aws" {
-  profile               = "${var.aws_dev_profile}"
-  region                = "${var.aws_region}"
-  #forbidden_account_ids = ["${var.prod_account_number}"]
-}
-
-provider "aws" {
-  profile = "${var.aws_prod_profile}"
+  profile = "${var.aws_profile}"
   region  = "${var.aws_region}"
-  alias   = "prod"
 }
 
 provider "chef" {
-  server_url = "https://api.opscode.com/organizations/rrev/"
+  server_url   = "https://api.opscode.com/organizations/rrev/"
   client_name  = "${var.username}"
   key_material = "${file(pathexpand("~/.chef/${var.username}.pem"))}"
 }
 
-resource "aws_instance" "host" {
+resource "aws_instance" "ec2_instance" {
   ami                         = "${data.aws_ami.invoca_encrypted.id}"
-  instance_type               = "${var.common_instance_type}"
+  instance_type               = "${var.instance_type}"
   key_name                    = "${var.key_name}"
   vpc_security_group_ids      = ["${var.vpc_security_group_ids}"]
   subnet_id                   = "${var.subnet_id}"
@@ -51,6 +44,7 @@ resource "aws_instance" "host" {
   tags {
     Name = "${var.environment}-${var.instance_name}-${count.index + 1}"
     Terraform = "true"
+    Owner     = "${var.username}"
     run_list = "${join(",", var.chef_run_list)}"
   }
 
@@ -61,7 +55,7 @@ resource "aws_instance" "host" {
 #  depends_on = ["chef_environment.env", "aws_instance.monitor"]
 }
 
-resource "chef_node" "host" {
+resource "chef_node" "node" {
   name = "${var.environment}-${var.instance_name}-${count.index + 1}"
   environment_name = "${var.environment}"
   lifecycle {
@@ -69,20 +63,20 @@ resource "chef_node" "host" {
   }
 }
 
-resource "aws_route53_record" "host" {
+resource "aws_route53_record" "public" {
   provider = "aws.prod"
   zone_id  = "${var.route53_zone}"
   name     = "${var.environment}-${var.instance_name}-${count.index + 1}.${var.domain_name}"
   type     = "A"
   ttl      = 300
-  records  = ["${aws_instance.host.public_ip}"]
+  records  = ["${aws_instance.ec2_instance.public_ip}"]
 }
 
-resource "aws_route53_record" "host_internal" {
+resource "aws_route53_record" "internal" {
   provider = "aws.prod"
   zone_id  = "${var.route53_zone}"
   name     = "${var.environment}-${var.instance_name}-${count.index + 1}.internal.${var.domain_name}"
   type     = "A"
   ttl      = 300
-  records  = ["${aws_instance.host.private_ip}"]
+  records  = ["${aws_instance.ec2_instance.private_ip}"]
 }
